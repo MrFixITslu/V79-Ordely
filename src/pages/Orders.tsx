@@ -1,0 +1,162 @@
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '../store';
+import { api } from '../api';
+import { FileText, CheckCircle, Clock } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
+export function Orders() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const user = useAuthStore((state) => state.user);
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const fetchOrders = () => {
+    api.getOrders().then((data) => {
+      setOrders(data);
+      setLoading(false);
+    });
+  };
+
+  const handleStatusChange = async (id: number, status: string) => {
+    try {
+      await api.updateOrderStatus(id, { status });
+      fetchOrders();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handlePaymentStatusChange = async (id: number, payment_status: string) => {
+    try {
+      await api.updateOrderStatus(id, { payment_status });
+      fetchOrders();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const generateInvoice = (order: any) => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text(`Ordely Official Invoice #${order.id}`, 14, 22);
+    doc.setFontSize(12);
+    doc.text(`Date: ${new Date(order.created_at).toLocaleDateString()}`, 14, 32);
+    doc.text(`Customer: ${user?.role === 'customer' ? user.name : order.customer_name}`, 14, 40);
+    doc.text(`Vendor: ${user?.role === 'vendor' ? user.name : order.vendor_name}`, 14, 48);
+    doc.text(`Payment Method: ${order.payment_method}`, 14, 56);
+    doc.text(`Payment Status: ${order.payment_status.toUpperCase()}`, 14, 64);
+
+    const tableData = order.items.map((item: any) => [
+      item.product_name,
+      item.quantity,
+      `EC $${item.price.toFixed(2)}`,
+      `${item.vat_percent}%`,
+      `EC $${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}`
+    ]);
+
+    (doc as any).autoTable({
+      startY: 74,
+      head: [['Item', 'Qty', 'Unit Price', 'VAT', 'Total']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 179, 164] },
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    doc.setFontSize(16);
+    doc.text(`Grand Total: EC $${order.total.toFixed(2)}`, 14, finalY);
+
+    doc.save(`Ordely_Invoice_${order.id}.pdf`);
+  };
+
+  if (loading) return <div className="text-center py-20">Loading orders...</div>;
+
+  return (
+    <div>
+      <h2 className="text-3xl font-bold text-slate-900 mb-8">{user?.role === 'vendor' ? 'Customer Orders' : 'My Orders'}</h2>
+      
+      {orders.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
+          <p className="text-slate-500">No orders found.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {orders.map((order) => (
+            <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-6 border-b border-slate-100">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Order #{order.id}</h3>
+                  <p className="text-sm text-slate-500">
+                    {new Date(order.created_at).toLocaleString()} • {user?.role === 'vendor' ? `Customer: ${order.customer_name}` : `Vendor: ${order.vendor_name}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 mt-4 md:mt-0">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${order.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                    {order.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                    {order.status.toUpperCase()}
+                  </span>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.payment_status === 'paid' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-700'}`}>
+                    {order.payment_status.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                {order.items.map((item: any) => (
+                  <div key={item.id} className="flex justify-between items-center text-sm">
+                    <span className="font-medium text-slate-700">{item.quantity} × {item.product_name}</span>
+                    <span className="text-slate-500">EC ${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col md:flex-row justify-between items-center pt-6 border-t border-slate-100">
+                <div className="mb-4 md:mb-0">
+                  <p className="text-sm text-slate-500">Total (incl. VAT)</p>
+                  <p className="text-2xl font-bold text-teal-600">EC ${order.total.toFixed(2)}</p>
+                </div>
+                
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => generateInvoice(order)}
+                    className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Invoice PDF
+                  </button>
+                  
+                  {user?.role === 'vendor' && (
+                    <div className="flex gap-2">
+                      <select
+                        value={order.status}
+                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <select
+                        value={order.payment_status}
+                        onChange={(e) => handlePaymentStatusChange(order.id, e.target.value)}
+                        className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
+                      >
+                        <option value="pending">Unpaid</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

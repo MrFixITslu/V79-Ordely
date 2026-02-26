@@ -1,0 +1,188 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useCartStore, useAuthStore } from '../store';
+import { api } from '../api';
+import { Trash2, FileText, CreditCard, ShoppingCart } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
+export function Cart() {
+  const { items, removeItem, clearCart } = useCartStore();
+  const user = useAuthStore((state) => state.user);
+  const [paymentMethod, setPaymentMethod] = useState('COD');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const groupedItems = items.reduce((acc, item) => {
+    if (!acc[item.vendor_id]) {
+      acc[item.vendor_id] = { vendor_name: item.vendor_name, items: [] };
+    }
+    acc[item.vendor_id].items.push(item);
+    return acc;
+  }, {} as Record<number, { vendor_name: string, items: any[] }>);
+
+  const handleCheckout = async () => {
+    if (items.length === 0) return;
+    setLoading(true);
+    try {
+      for (const vendorId of Object.keys(groupedItems)) {
+        const vendorItems = groupedItems[Number(vendorId)].items;
+        await api.createOrder({
+          vendor_id: Number(vendorId),
+          items: vendorItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+          payment_method: paymentMethod
+        });
+      }
+      clearCart();
+      alert('Order placed successfully!');
+      navigate('/orders');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateQuote = () => {
+    if (items.length === 0) return;
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text(`Ordely Official Quote`, 14, 22);
+    doc.setFontSize(12);
+    doc.text(`Customer: ${user?.name}`, 14, 32);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 40);
+
+    let currentY = 50;
+
+    Object.values(groupedItems).forEach((group: any) => {
+      doc.setFontSize(14);
+      doc.text(`Vendor: ${group.vendor_name}`, 14, currentY);
+      currentY += 10;
+
+      const tableData = group.items.map((item: any) => [
+        item.name,
+        item.quantity,
+        `EC $${item.price.toFixed(2)}`,
+        `${item.vat_percent}%`,
+        `EC $${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}`
+      ]);
+
+      (doc as any).autoTable({
+        startY: currentY,
+        head: [['Item', 'Qty', 'Unit Price', 'VAT', 'Total']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [0, 179, 164] },
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 20;
+    });
+
+    const grandTotal = items.reduce((sum, item) => sum + (item.price * item.quantity * (1 + item.vat_percent / 100)), 0);
+    doc.setFontSize(16);
+    doc.text(`Grand Total: EC $${grandTotal.toFixed(2)}`, 14, currentY);
+
+    doc.save(`Ordely_Quote_${new Date().getTime()}.pdf`);
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
+        <ShoppingCart className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Your cart is empty</h2>
+        <p className="text-slate-500 mb-6">Looks like you haven't added anything yet.</p>
+        <button onClick={() => navigate('/customer')} className="bg-teal-500 hover:bg-teal-600 text-white px-6 py-3 rounded-xl font-bold transition-colors">
+          Browse Vendors
+        </button>
+      </div>
+    );
+  }
+
+  const grandTotal = items.reduce((sum, item) => sum + (item.price * item.quantity * (1 + item.vat_percent / 100)), 0);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-2 space-y-6">
+        <h2 className="text-3xl font-bold text-slate-900 mb-6">Shopping Cart</h2>
+        {Object.entries(groupedItems).map(([vendorId, group]: [string, any]) => (
+          <div key={vendorId} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <h3 className="text-xl font-bold text-slate-900 mb-4 pb-4 border-b border-slate-100">Vendor: {group.vendor_name}</h3>
+            <div className="space-y-4">
+              {group.items.map((item: any) => {
+                const itemTotal = item.price * item.quantity;
+                const vatAmount = itemTotal * (item.vat_percent / 100);
+                return (
+                  <div key={item.product_id} className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-slate-900">{item.name}</h4>
+                      <p className="text-sm text-slate-500">Qty: {item.quantity} × EC ${item.price.toFixed(2)}</p>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="font-bold text-slate-900">EC ${(itemTotal + vatAmount).toFixed(2)}</p>
+                        <p className="text-xs text-slate-400">incl. {item.vat_percent}% VAT</p>
+                      </div>
+                      <button onClick={() => removeItem(item.product_id)} className="text-red-400 hover:text-red-600 transition-colors p-2 bg-red-50 rounded-lg">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="lg:col-span-1">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 sticky top-8">
+          <h3 className="text-xl font-bold text-slate-900 mb-6">Order Summary</h3>
+          <div className="space-y-4 mb-6 pb-6 border-b border-slate-100">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal</span>
+              <span>EC ${items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>VAT</span>
+              <span>EC ${items.reduce((sum, item) => sum + (item.price * item.quantity * (item.vat_percent / 100)), 0).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xl font-bold text-slate-900 pt-4 border-t border-slate-100">
+              <span>Total</span>
+              <span className="text-teal-600">EC ${grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <label className="block text-sm font-bold text-slate-900 mb-2">Payment Method</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none bg-slate-50"
+            >
+              <option value="COD">Cash on Delivery (COD)</option>
+              <option value="Online">Online Payment (Simulated)</option>
+            </select>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={handleCheckout}
+              disabled={loading}
+              className="w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <CreditCard className="w-5 h-5" />
+              {loading ? 'Processing...' : 'Confirm Order'}
+            </button>
+            <button
+              onClick={generateQuote}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <FileText className="w-5 h-5" />
+              Download PDF Quote
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
