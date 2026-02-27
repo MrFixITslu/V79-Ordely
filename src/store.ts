@@ -37,6 +37,10 @@ interface CartItem {
   quantity: number;
   vendor_id: number;
   vendor_name: string;
+  vendor_logo?: string;
+  vendor_address?: string;
+  vendor_phone?: string;
+  vendor_tax_id?: string;
 }
 
 interface CartState {

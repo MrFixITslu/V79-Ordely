@@ -30,6 +30,9 @@ db.exec(`
     business_name TEXT NOT NULL,
     description TEXT,
     logo_url TEXT,
+    address TEXT,
+    phone TEXT,
+    tax_id TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
 
@@ -41,6 +44,8 @@ db.exec(`
     price REAL NOT NULL,
     vat_percent REAL DEFAULT 15,
     image_url TEXT,
+    sku TEXT,
+    stock_quantity INTEGER DEFAULT 0,
     FOREIGN KEY(vendor_id) REFERENCES vendors(id)
   );
 
@@ -70,6 +75,13 @@ db.exec(`
     FOREIGN KEY(product_id) REFERENCES products(id)
   );
 `);
+
+// Migrations for existing databases
+try { db.exec("ALTER TABLE products ADD COLUMN sku TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE products ADD COLUMN stock_quantity INTEGER DEFAULT 0;"); } catch (e) {}
+try { db.exec("ALTER TABLE vendors ADD COLUMN address TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE vendors ADD COLUMN phone TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE vendors ADD COLUMN tax_id TEXT;"); } catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -142,6 +154,14 @@ async function startServer() {
     res.json(vendor);
   });
 
+  app.put("/api/vendors/profile", authenticate, (req: any, res) => {
+    if (req.user.role !== "vendor") return res.status(403).json({ error: "Only vendors can update profile" });
+    const { business_name, description, logo_url, address, phone, tax_id } = req.body;
+    db.prepare("UPDATE vendors SET business_name = ?, description = ?, logo_url = ?, address = ?, phone = ?, tax_id = ? WHERE user_id = ?")
+      .run(business_name, description, logo_url, address, phone, tax_id, req.user.id);
+    res.json({ success: true });
+  });
+
   // Products
   app.get("/api/vendors/:id/products", (req, res) => {
     const products = db.prepare("SELECT * FROM products WHERE vendor_id = ?").all(req.params.id);
@@ -153,8 +173,8 @@ async function startServer() {
     const vendor = db.prepare("SELECT id FROM vendors WHERE user_id = ?").get(req.user.id) as any;
     if (!vendor) return res.status(400).json({ error: "Vendor profile not found" });
 
-    const { name, description, price, vat_percent, image_url } = req.body;
-    const info = db.prepare("INSERT INTO products (vendor_id, name, description, price, vat_percent, image_url) VALUES (?, ?, ?, ?, ?, ?)").run(vendor.id, name, description, price, vat_percent || 15, image_url);
+    const { name, description, price, vat_percent, image_url, sku, stock_quantity } = req.body;
+    const info = db.prepare("INSERT INTO products (vendor_id, name, description, price, vat_percent, image_url, sku, stock_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(vendor.id, name, description, price, vat_percent || 15, image_url, sku, stock_quantity || 0);
     res.json({ id: info.lastInsertRowid });
   });
 
@@ -204,7 +224,7 @@ async function startServer() {
     let orders;
     if (req.user.role === "customer") {
       orders = db.prepare(`
-        SELECT o.*, v.business_name as vendor_name 
+        SELECT o.*, v.business_name as vendor_name, v.logo_url, v.address as vendor_address, v.phone as vendor_phone, v.tax_id as vendor_tax_id
         FROM orders o 
         JOIN vendors v ON o.vendor_id = v.id 
         WHERE o.customer_id = ?
@@ -214,9 +234,10 @@ async function startServer() {
       const vendor = db.prepare("SELECT id FROM vendors WHERE user_id = ?").get(req.user.id) as any;
       if (!vendor) return res.json([]);
       orders = db.prepare(`
-        SELECT o.*, u.name as customer_name 
+        SELECT o.*, u.name as customer_name, v.business_name as vendor_name, v.logo_url, v.address as vendor_address, v.phone as vendor_phone, v.tax_id as vendor_tax_id
         FROM orders o 
         JOIN users u ON o.customer_id = u.id 
+        JOIN vendors v ON o.vendor_id = v.id
         WHERE o.vendor_id = ?
         ORDER BY o.created_at DESC
       `).all(vendor.id);

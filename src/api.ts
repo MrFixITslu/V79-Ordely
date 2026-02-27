@@ -28,4 +28,5 @@ export const api = {
   createOrder: (data: any) => fetchWithAuth('/orders', { method: 'POST', body: JSON.stringify(data) }),
   getOrders: () => fetchWithAuth('/orders'),
   updateOrderStatus: (id: number, data: any) => fetchWithAuth(`/orders/${id}/status`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateVendorProfile: (data: any) => fetchWithAuth('/vendors/profile', { method: 'PUT', body: JSON.stringify(data) }),
 };

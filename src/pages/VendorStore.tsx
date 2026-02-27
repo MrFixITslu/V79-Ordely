@@ -54,8 +54,16 @@ export function VendorStore() {
                 No Image
               </div>
             )}
-            <h3 className="text-lg font-bold text-slate-900 mb-1">{product.name}</h3>
-            <p className="text-sm text-slate-500 mb-4 flex-grow line-clamp-2">{product.description}</p>
+            <div className="flex justify-between items-start mb-1">
+              <h3 className="text-lg font-bold text-slate-900">{product.name}</h3>
+              {product.sku && <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">{product.sku}</span>}
+            </div>
+            <p className="text-sm text-slate-500 mb-2 flex-grow line-clamp-2">{product.description}</p>
+            <div className="mb-4">
+              <span className={`text-xs font-medium ${product.stock_quantity > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {product.stock_quantity > 0 ? `In Stock (${product.stock_quantity})` : 'Out of Stock'}
+              </span>
+            </div>
             <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-100">
               <div>
                 <p className="text-xl font-bold text-teal-600">EC ${product.price.toFixed(2)}</p>
@@ -69,10 +77,15 @@ export function VendorStore() {
                   vat_percent: product.vat_percent,
                   quantity: 1,
                   vendor_id: vendor.id,
-                  vendor_name: vendor.business_name
+                  vendor_name: vendor.business_name,
+                  vendor_logo: vendor.logo_url,
+                  vendor_address: vendor.address,
+                  vendor_phone: vendor.phone,
+                  vendor_tax_id: vendor.tax_id
                 })}
-                className="bg-slate-900 hover:bg-teal-500 text-white p-2 rounded-lg transition-colors"
-                title="Add to Cart"
+                disabled={product.stock_quantity <= 0}
+                className="bg-slate-900 hover:bg-teal-500 text-white p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={product.stock_quantity > 0 ? "Add to Cart" : "Out of Stock"}
               >
                 <Plus className="w-5 h-5" />
               </button>
