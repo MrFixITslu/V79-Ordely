@@ -4,6 +4,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  phone?: string;
   role: 'customer' | 'vendor' | 'admin';
 }
 
@@ -11,6 +12,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   login: (user: User, token: string) => void;
+  updateUser: (user: User) => void;
   logout: () => void;
 }
 
@@ -21,6 +23,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('user', JSON.stringify(user));
     localStorage.setItem('token', token);
     set({ user, token });
+  },
+  updateUser: (user) => {
+    localStorage.setItem('user', JSON.stringify(user));
+    set({ user });
   },
   logout: () => {
     localStorage.removeItem('user');
@@ -34,6 +40,7 @@ interface CartItem {
   name: string;
   price: number;
   vat_percent: number;
+  discount_percent?: number;
   quantity: number;
   vendor_id: number;
   vendor_name: string;
@@ -41,6 +48,10 @@ interface CartItem {
   vendor_address?: string;
   vendor_phone?: string;
   vendor_tax_id?: string;
+  vendor_website?: string;
+  vendor_facebook?: string;
+  vendor_instagram?: string;
+  vendor_linkedin?: string;
 }
 
 interface CartState {

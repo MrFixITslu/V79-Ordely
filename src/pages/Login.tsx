@@ -22,9 +22,10 @@ export function Login() {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-20 bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+    <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
       <h2 className="text-3xl font-bold text-slate-900 mb-6 text-center">Welcome Back</h2>
       {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>

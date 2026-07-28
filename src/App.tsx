@@ -10,6 +10,7 @@ import { VendorDashboard } from './pages/VendorDashboard';
 import { VendorStore } from './pages/VendorStore';
 import { Cart } from './pages/Cart';
 import { Orders } from './pages/Orders';
+import { Messages } from './pages/Messages';
 
 function ProtectedRoute({ children, role }: { children: React.ReactNode, role?: string }) {
   const user = useAuthStore((state) => state.user);
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/vendor/:id" element={<ProtectedRoute role="customer"><VendorStore /></ProtectedRoute>} />
             <Route path="/cart" element={<ProtectedRoute role="customer"><Cart /></ProtectedRoute>} />
             <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
+            <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
             
             <Route path="/vendor" element={<ProtectedRoute role="vendor"><VendorDashboard /></ProtectedRoute>} />
           </Routes>

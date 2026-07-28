@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import { api } from '../api';
-import { FileText, CheckCircle, Clock } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertCircle, Check, X, Phone, Mail, User as UserIcon, MessageSquare } from 'lucide-react';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export function Orders() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -39,14 +40,22 @@ export function Orders() {
     }
   };
 
+  const handleQuoteAction = async (id: number, action: 'approve' | 'decline') => {
+    try {
+      await api.quoteAction(id, action);
+      alert(`Quote ${action === 'approve' ? 'approved' : 'declined'} successfully.`);
+      fetchOrders();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const generateInvoice = (order: any) => {
     const doc = new jsPDF();
     
     // Header with Logo
     if (order.logo_url) {
       try {
-        // Note: In a real app, you'd need to handle image loading/cors
-        // For this demo, we'll try to add it if it's a valid data URL or accessible
         doc.addImage(order.logo_url, 'PNG', 14, 10, 30, 30);
       } catch (e) {
         console.error("Could not add logo to PDF", e);
@@ -73,22 +82,28 @@ export function Orders() {
       doc.text(`Tax ID: ${order.vendor_tax_id}`, 200, vendorY, { align: 'right' });
     }
 
-    // Invoice Info
+    // Invoice Header Info
     doc.setFontSize(24);
     doc.setTextColor(0);
     doc.text('INVOICE', 14, 55);
     
     doc.setFontSize(10);
-    doc.text(`Invoice #: ${order.id}`, 14, 65);
+    doc.text(`Invoice #: INV-${order.id}`, 14, 65);
     doc.text(`Date: ${new Date(order.created_at).toLocaleDateString()}`, 14, 70);
     doc.text(`Payment Method: ${order.payment_method}`, 14, 75);
     doc.text(`Payment Status: ${order.payment_status.toUpperCase()}`, 14, 80);
 
-    // Customer Info
+    // Customer Contact Info (Name, Email, Tel)
     doc.setFontSize(12);
-    doc.text('BILL TO:', 14, 95);
+    doc.setFont('helvetica', 'bold');
+    doc.text('BILL TO (CUSTOMER):', 14, 95);
     doc.setFontSize(10);
-    doc.text(user?.role === 'customer' ? user.name : order.customer_name, 14, 102);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name: ${order.customer_name || user?.name || 'Valued Customer'}`, 14, 102);
+    if (order.customer_email) doc.text(`Email: ${order.customer_email}`, 14, 108);
+    if (order.customer_phone) doc.text(`Tel: ${order.customer_phone}`, 14, 114);
+
+    const startTableY = order.customer_phone ? 122 : 112;
 
     const tableData = order.items.map((item: any) => [
       item.product_name,
@@ -98,8 +113,8 @@ export function Orders() {
       `EC $${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}`
     ]);
 
-    (doc as any).autoTable({
-      startY: 110,
+    autoTable(doc, {
+      startY: startTableY,
       head: [['Item', 'Qty', 'Unit Price', 'VAT', 'Total']],
       body: tableData,
       theme: 'grid',
@@ -163,11 +178,17 @@ export function Orders() {
     doc.text(`Date: ${new Date(order.created_at).toLocaleDateString()}`, 14, 70);
     doc.text(`Valid Until: ${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}`, 14, 75);
 
-    // Customer Info
+    // Customer Contact Info (Name, Email, Tel)
     doc.setFontSize(12);
-    doc.text('PREPARED FOR:', 14, 95);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PREPARED FOR (CUSTOMER):', 14, 90);
     doc.setFontSize(10);
-    doc.text(order.customer_name || user?.name, 14, 102);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name: ${order.customer_name || user?.name || 'Valued Customer'}`, 14, 97);
+    if (order.customer_email) doc.text(`Email: ${order.customer_email}`, 14, 103);
+    if (order.customer_phone) doc.text(`Tel: ${order.customer_phone}`, 14, 109);
+
+    const startTableY = order.customer_phone ? 118 : 108;
 
     const tableData = order.items.map((item: any) => [
       item.product_name,
@@ -177,8 +198,8 @@ export function Orders() {
       `EC $${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}`
     ]);
 
-    (doc as any).autoTable({
-      startY: 110,
+    autoTable(doc, {
+      startY: startTableY,
       head: [['Item', 'Qty', 'Unit Price', 'VAT', 'Total']],
       body: tableData,
       theme: 'grid',
@@ -214,7 +235,7 @@ export function Orders() {
 
   return (
     <div>
-      <h2 className="text-3xl font-bold text-slate-900 mb-8">{user?.role === 'vendor' ? 'Customer Orders' : 'My Orders'}</h2>
+      <h2 className="text-3xl font-bold text-slate-900 mb-8">{user?.role === 'vendor' ? 'Customer Orders & Quotes' : 'My Orders & Quotes'}</h2>
       
       {orders.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
@@ -222,92 +243,202 @@ export function Orders() {
         </div>
       ) : (
         <div className="space-y-6">
-          {orders.map((order) => (
-            <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-6 border-b border-slate-100">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Order #{order.id}</h3>
-                  <p className="text-sm text-slate-500">
-                    {new Date(order.created_at).toLocaleString()} • {user?.role === 'vendor' ? `Customer: ${order.customer_name}` : `Vendor: ${order.vendor_name}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-4 mt-4 md:mt-0">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${order.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                    {order.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                    {order.status.toUpperCase()}
-                  </span>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.payment_status === 'paid' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-700'}`}>
-                    {order.payment_status.toUpperCase()}
-                  </span>
-                </div>
-              </div>
+          {orders.map((order) => {
+            const isQuotePending = order.status === 'quote_pending';
+            const isQuoteApproved = order.status === 'quote_approved';
+            const isQuoteDeclined = order.status === 'quote_declined';
 
-              <div className="space-y-4 mb-6">
-                {order.items.map((item: any) => (
-                  <div key={item.id} className="flex justify-between items-center text-sm">
-                    <span className="font-medium text-slate-700">{item.quantity} × {item.product_name}</span>
-                    <span className="text-slate-500">EC ${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}</span>
+            return (
+              <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-slate-100 gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-lg font-bold text-slate-900">Order #{order.id}</h3>
+                      {isQuotePending && (
+                        <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-md font-bold flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                          Quote Approval Needed
+                        </span>
+                      )}
+                      {isQuoteApproved && (
+                        <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-md font-bold flex items-center gap-1">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          Quote Approved
+                        </span>
+                      )}
+                      {isQuoteDeclined && (
+                        <span className="bg-rose-100 text-rose-800 text-xs px-2.5 py-1 rounded-md font-bold flex items-center gap-1">
+                          <X className="w-3.5 h-3.5 text-rose-600" />
+                          Quote Declined
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {new Date(order.created_at).toLocaleString()} • {user?.role === 'vendor' ? `Customer: ${order.customer_name}` : `Vendor: ${order.vendor_name}`}
+                    </p>
                   </div>
-                ))}
-              </div>
 
-              <div className="flex flex-col md:flex-row justify-between items-center pt-6 border-t border-slate-100">
-                <div className="mb-4 md:mb-0">
-                  <p className="text-sm text-slate-500">Total (incl. VAT)</p>
-                  <p className="text-2xl font-bold text-teal-600">EC ${order.total.toFixed(2)}</p>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${
+                      order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                      isQuotePending ? 'bg-amber-100 text-amber-700' :
+                      isQuoteApproved ? 'bg-teal-100 text-teal-700' :
+                      isQuoteDeclined ? 'bg-rose-100 text-rose-700' :
+                      'bg-orange-100 text-orange-700'
+                    }`}>
+                      {order.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                      {order.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.payment_status === 'paid' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-700'}`}>
+                      {order.payment_status.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
-                
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => generateInvoice(order)}
-                    className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Invoice PDF
-                  </button>
 
-                  {user?.role === 'vendor' && order.status === 'pending' && (
-                    <button
-                      onClick={() => {
-                        // Reuse invoice logic but change title to QUOTE
-                        const doc = new jsPDF();
-                        // ... (I should probably refactor this or just copy for now)
-                        // Actually, I'll just make a generateQuote function in Orders.tsx too
-                        generateQuote(order);
-                      }}
-                      className="flex items-center gap-2 bg-orange-50 hover:bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                {/* Customer / Vendor Details Summary Box */}
+                <div className="bg-slate-50 rounded-xl p-4 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-4 border border-slate-100">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <UserIcon className="w-4 h-4 text-teal-600" />
+                      <span className="font-semibold text-slate-900">{user?.role === 'vendor' ? order.customer_name : order.vendor_name}</span>
+                    </div>
+                    {order.customer_email && user?.role === 'vendor' && (
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{order.customer_email}</span>
+                      </div>
+                    )}
+                    {order.customer_phone && user?.role === 'vendor' && (
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 text-teal-600" />
+                        <span className="font-medium text-slate-900">{order.customer_phone}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Messaging Trigger */}
+                  {user?.role === 'vendor' ? (
+                    <Link
+                      to={`/messages?userId=${order.customer_id}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition-colors shadow-xs"
                     >
-                      <FileText className="w-4 h-4" />
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Message Customer</span>
+                    </Link>
+                  ) : (
+                    order.vendor_user_id && (
+                      <Link
+                        to={`/messages?userId=${order.vendor_user_id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition-colors shadow-xs"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Message Vendor</span>
+                      </Link>
+                    )
+                  )}
+                </div>
+
+                {/* Quote Action Box for Customer */}
+                {user?.role === 'customer' && isQuotePending && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-amber-900 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        Quote Approval Required
+                      </h4>
+                      <p className="text-xs text-amber-800">
+                        Please review the quote details below. You must approve the quote before the vendor can process and fulfill your order.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleQuoteAction(order.id, 'approve')}
+                        className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Check className="w-4 h-4" />
+                        Approve Quote
+                      </button>
+                      <button
+                        onClick={() => handleQuoteAction(order.id, 'decline')}
+                        className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+                      >
+                        <X className="w-4 h-4" />
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notice for Vendor if Quote Pending */}
+                {user?.role === 'vendor' && isQuotePending && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Customer has not approved this quote yet. Order status cannot be moved to processing or completed until approved.</span>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {order.items.map((item: any) => (
+                    <div key={item.id} className="flex justify-between items-center text-sm">
+                      <span className="font-medium text-slate-700">{item.quantity} × {item.product_name}</span>
+                      <span className="text-slate-500 font-mono">EC ${(item.price * item.quantity * (1 + item.vat_percent / 100)).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-col md:flex-row justify-between items-center pt-4 border-t border-slate-100 gap-4">
+                  <div>
+                    <p className="text-xs text-slate-500">Total (incl. VAT)</p>
+                    <p className="text-2xl font-bold text-teal-600">EC ${order.total.toFixed(2)}</p>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => generateInvoice(order)}
+                      className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      <FileText className="w-4 h-4 text-slate-500" />
+                      Invoice PDF
+                    </button>
+
+                    <button
+                      onClick={() => generateQuote(order)}
+                      className="flex items-center gap-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      <FileText className="w-4 h-4 text-teal-600" />
                       Quote PDF
                     </button>
-                  )}
-                  
-                  {user?.role === 'vendor' && (
-                    <div className="flex gap-2">
-                      <select
-                        value={order.status}
-                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                        className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="completed">Completed</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                      <select
-                        value={order.payment_status}
-                        onChange={(e) => handlePaymentStatusChange(order.id, e.target.value)}
-                        className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
-                      >
-                        <option value="pending">Unpaid</option>
-                        <option value="paid">Paid</option>
-                      </select>
-                    </div>
-                  )}
+                    
+                    {user?.role === 'vendor' && (
+                      <div className="flex gap-2">
+                        <select
+                          value={order.status}
+                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                          className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-teal-500"
+                        >
+                          <option value="quote_pending" disabled={order.status !== 'quote_pending'}>Quote Pending Approval</option>
+                          <option value="quote_approved">Quote Approved</option>
+                          <option value="processing" disabled={isQuotePending}>Processing</option>
+                          <option value="shipped" disabled={isQuotePending}>Shipped</option>
+                          <option value="completed" disabled={isQuotePending}>Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+
+                        <select
+                          value={order.payment_status}
+                          onChange={(e) => handlePaymentStatusChange(order.id, e.target.value)}
+                          className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-teal-500"
+                        >
+                          <option value="pending">Unpaid</option>
+                          <option value="paid">Paid</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
