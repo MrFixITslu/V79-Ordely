@@ -1,0 +1,52 @@
+name: Isolated Ordely lockfile regeneration
+on:
+  push:
+    branches:
+      - security/remove-default-admin-and-demo-auth-20261027
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  resolve:
+    if: github.repository == 'MrFixITslu/V79-Ordely' && github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'security/remove-default-admin-and-demo-auth-20261027'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/remove-default-admin-and-demo-auth-20261027
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve only the dependency lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g npm@11.9.0
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          if (lock.lockfileVersion !== 3) throw Error('Unexpected lockfile format');
+          for (const name of ['dependencies','devDependencies']) {
+            for (const [key,val] of Object.entries(pkg[name] || {})) {
+              if (lock.packages[''][name]?.[key] !== val) throw Error('Root dependency changed: ' + key);
+            }
+          }
+          NODE
+          test "$(git diff --name-only | sed '/^$/d')" = "package-lock.json" || test -z "$(git diff --name-only)"
+      - name: Commit generated lockfile exclusively on security branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then exit 0; fi
+          git config user.name 'v79-security-ci'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package-lock.json
+          test "$(git diff --cached --name-only)" = 'package-lock.json'
+          git commit -m 'fix(security): reconcile dependency lockfile on isolated branch [skip ci]'
+          git push origin HEAD:security/remove-default-admin-and-demo-auth-20261027
