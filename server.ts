@@ -5,18 +5,12 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
 import { fileURLToPath } from "url";
+import { secretForEnvironment, validateSelfRegistration, allowDemoSeed } from "./server/securityPolicy.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = (() => {
-  const secret = process.env.JWT_SECRET || '';
-  if (process.env.NODE_ENV === 'production' && Buffer.byteLength(secret, 'utf8') < 32) {
-    throw new Error('Production requires a unique JWT_SECRET of at least 32 bytes.');
-  }
-  if (!secret) return 'development-only-not-for-production';
-  return secret;
-})();
+const JWT_SECRET = secretForEnvironment(process.env.JWT_SECRET, process.env.NODE_ENV === 'production');
 
 const db = new Database("ordely.db");
 
@@ -249,7 +243,7 @@ async function seedDatabase() {
 async function startServer() {
   // Demo accounts use a published test password and MUST NOT exist in new production environments.
   // Existing seeded accounts require a separate, operator-approved password reset or removal.
-  if (process.env.NODE_ENV !== 'production' && process.env.ORDELY_SEED_DEMO === '1') {
+  if (allowDemoSeed(process.env.NODE_ENV === 'production', process.env.ORDELY_SEED_DEMO)) {
     await seedDatabase();
   }
   const app = express();
@@ -279,9 +273,7 @@ async function startServer() {
     const { name, email, password, role, business_name, phone } = req.body || {};
     // Registration never grants administrator access based on a client-supplied role.
     if (!['customer','vendor'].includes(role)) return res.status(403).json({ error: 'Role is not available for self-registration.' });
-    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        typeof name !== 'string' || !name.trim() ||
-        typeof password !== 'string' || password.length < 15 || password.length > 128) {
+    if (!validateSelfRegistration({name,email,password,role})) {
       return res.status(400).json({ error: 'Valid name/email and a password of 15-128 characters are required.' });
     }
     try {
