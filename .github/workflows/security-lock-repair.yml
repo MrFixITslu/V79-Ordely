@@ -27,6 +27,9 @@ jobs:
           set -euo pipefail
           npm install -g npm@11.9.0
           npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          # A fix can leave advisories without compatible patches. The independent
+          # mandatory production audit in security-candidate.yml remains enforced.
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || echo 'Unresolved advisories remain; release HOLD.'
           node - <<'NODE'
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
