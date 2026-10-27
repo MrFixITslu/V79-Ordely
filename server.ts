@@ -5,11 +5,12 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
 import { fileURLToPath } from "url";
+import { secretForEnvironment, validateSelfRegistration, allowDemoSeed } from "./server/securityPolicy.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret_ordely_key";
+const JWT_SECRET = secretForEnvironment(process.env.JWT_SECRET, process.env.NODE_ENV === 'production');
 
 const db = new Database("ordely.db");
 
@@ -240,12 +241,16 @@ async function seedDatabase() {
 }
 
 async function startServer() {
-  await seedDatabase();
+  // Demo accounts use a published test password and MUST NOT exist in new production environments.
+  // Existing seeded accounts require a separate, operator-approved password reset or removal.
+  if (allowDemoSeed(process.env.NODE_ENV === 'production', process.env.ORDELY_SEED_DEMO)) {
+    await seedDatabase();
+  }
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ limit: '64kb', extended: false }));
 
   // --- Auth Middleware ---
   const authenticate = (req: any, res: any, next: any) => {
@@ -265,9 +270,14 @@ async function startServer() {
 
   // Auth
   app.post("/api/auth/register", async (req, res) => {
-    const { name, email, password, role, business_name, phone } = req.body;
+    const { name, email, password, role, business_name, phone } = req.body || {};
+    // Registration never grants administrator access based on a client-supplied role.
+    if (!['customer','vendor'].includes(role)) return res.status(403).json({ error: 'Role is not available for self-registration.' });
+    if (!validateSelfRegistration({name,email,password,role})) {
+      return res.status(400).json({ error: 'Valid name/email and a password of 15-128 characters are required.' });
+    }
     try {
-      const hash = await bcrypt.hash(password, 10);
+      const hash = await bcrypt.hash(password, 12);
       const insertUser = db.prepare("INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)");
       const info = insertUser.run(name, email, hash, role, phone || null);
       const userId = info.lastInsertRowid;
@@ -285,8 +295,9 @@ async function startServer() {
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string') return res.status(401).json({ error: 'Invalid credentials' });
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(400).json({ error: "Invalid credentials" });

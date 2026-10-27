@@ -1,0 +1,32 @@
+name: Isolated security candidate checks
+on:
+  push:
+    branches:
+      - security/remove-default-admin-and-demo-auth-20261027
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact dependency lockfile
+        run: |
+          npm install -g npm@11.9.0
+          npm ci --no-audit --no-fund
+      - name: Test destructive and authentication boundaries
+        run: node --import tsx --test tests/securityPolicy.test.mjs
+      - name: Typecheck and build
+        run: |
+          npm run lint
+          npm run build
+      - name: Mandatory security audit of production dependencies
+        run: npm audit --omit=dev --audit-level=high
