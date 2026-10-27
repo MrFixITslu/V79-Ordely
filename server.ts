@@ -279,7 +279,7 @@ async function startServer() {
     const { name, email, password, role, business_name, phone } = req.body || {};
     // Registration never grants administrator access based on a client-supplied role.
     if (!['customer','vendor'].includes(role)) return res.status(403).json({ error: 'Role is not available for self-registration.' });
-    if (typeof email !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) ||
+    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
         typeof name !== 'string' || !name.trim() ||
         typeof password !== 'string' || password.length < 15 || password.length > 128) {
       return res.status(400).json({ error: 'Valid name/email and a password of 15-128 characters are required.' });
